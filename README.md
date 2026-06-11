@@ -1,58 +1,175 @@
 # CRM Intelligence Platform (Agentic Ops Platform)
 
-An enterprise-ready, AI-powered CRM operations inbox and autonomous agent routing system. It ingests incoming customer emails, clusters them into conversational threads, runs real-time heuristics checks (for spam, internal routing, and security/ransomware escalations), performs structured LLM triage (sentiment analysis, urgency classification, category detection, entity extraction), executes a multi-step autonomous ReAct agent loop with registered tools, and renders it on a premium interactive dark-mode React dashboard.
+An enterprise-ready, AI-powered CRM operations inbox and autonomous agent routing system. It ingests incoming customer emails, clusters them into conversational threads, runs real-time heuristics checks, performs structured LLM triage, executes a multi-step autonomous ReAct agent loop with registered tools, and displays it on a premium interactive dark-mode React dashboard.
 
 ---
 
-## Tech Stack
+## 1. Problem Statement
 
-- **Backend**: FastAPI, SQLAlchemy (supporting both async/sync operations), pgvector, Celery, Redis
-- **AI / LLM Integration**: OpenAI API (with robust deterministic rules-based fallbacks for sandbox environments)
-- **Frontend**: React (Vite + TypeScript), TailwindCSS, Lucide-React, Recharts
-- **Containerization**: Docker Compose
+Modern enterprise customer support teams face high volumes of incoming customer correspondence. This results in:
+- **Delayed Response Times**: Critical P0 outages, SLA breaches, and legal threats go unnoticed in spam or low-priority folders.
+- **Fragile Automation**: Traditional rules-based systems are static, case-sensitive, and cannot analyze customer sentiment or extract complex entities.
+- **Lack of Unified Context**: Support agents must manually toggle between billing databases, knowledge repositories, and external rating websites (like G2 or Trustpilot) to understand who a customer is and what their churn threat level represents.
+- **Compliance Vulnerabilities**: High-risk items (such as GDPR Article 20 Right to Portability requests or ransomware extortion) are accidentally replied to automatically, posing legal and security hazards.
 
----
-
-## Key Features
-
-1. **Real-time Ingestion & Heuristics**: Ingests incoming emails via `POST /api/ingest` and runs keyword filters under 10ms to triage spam, internal communications, and immediate threat alerts (e.g., ransomware, extortion).
-2. **Autonomous ReAct Agent Loop**: Runs a state machine loop in Celery background workers (up to 6 steps) utilizing registered tools (`get_thread_history`, `search_knowledge_base`, `check_account_status`, `flag_for_legal`, `escalate_to_human`, etc.) to retrieve policy context and draft replies.
-3. **RAG-Enhanced Triage**: Injects context chunks retrieved from vector search over local markdown policy documents (e.g., SLA credit regulations, refund playbooks) using pgvector cosine similarity.
-4. **Live Web Intelligence Cache**: Scrapes public ratings and complaints from sites like G2, Capterra, and Trustpilot for reputation-sensitive senders, observing `robots.txt` rules and caching results in the database for 6 hours.
-5. **Interactive Dashboard Viewports**:
-   - **Mission Control Inbox**: A real-time, filterable inbox of incoming customer threads.
-   - **Thread Workspace**: A multi-pane viewport displaying chronological timeline emails with highlighted entities (monetary values, dates/deadlines, tickets/orders), contact profile indicators, live web reputation details, interactive collapsible agent reasoning logs, and RAG context.
-   - **Business Analytics**: High-quality charts mapping average sentiment trends, category breakdowns, and customer risk statuses.
-   - **Simulation Console**: Control panel to inject pre-configured scenarios (e.g., Bob Jones P0 Outage, GDPR portability, Ransomware extortion) or stream the complete `email-data-advanced.json` database.
+### The Solution: CRM Intelligence Platform
+This platform solves these inefficiencies by combining:
+1. An **Asynchronous Ingestion Pipeline** running under 10ms.
+2. An **Autonomous ReAct Agent Loop** running custom tools to retrieve company policies, check billing profiles, and draft context-specific replies.
+3. A **RAG (Retrieval-Augmented Generation) Vector Store** (`pgvector`) queryable under 200ms.
+4. A **Triple-Pane Operations Portal** that visualizes threads, contact data, web sentiment intelligence, collapsible agent reasoning chains, and manual override controls.
 
 ---
 
-## Getting Started
+## 2. System Architecture
 
-### Prerequisites
-- Docker & Docker Compose installed on your system.
+The following diagram illustrates how inbound emails flow through the system:
 
-### Build and Launch the Platform
-Run the following single command in the root folder of the project to build and launch all containers:
+```mermaid
+graph TD
+    A["Inbound Email (Webhook / Payload)"] --> B["FastAPI Web Server (/api/ingest)"]
+    B --> C{"Heuristics Pre-check"}
+    C -->|"Keyword Flagged (Spam/Internal)"| D[("PostgreSQL DB")]
+    C -->|"Standard Inflow"| E["Redis Queue Broker"]
+    E --> F["Celery Task Worker"]
+    F --> G["pgvector Similarity Search"]
+    F --> H["LLM Classification & Triage"]
+    F --> I["Autonomous ReAct Agent Loop"]
+    I -->|"Tool Invocation"| J["Tools (Billing, KB, History)"]
+    I --> K{"Action Determination"}
+    K -->|"Auto-Reply Drafted"| D
+    K -->|"Escalate to Human"| D
+    D --> L["Vite React Frontend (Operations Dashboard)"]
+```
+
+---
+
+## 3. Project Structure
+
+```
+SenAI Project Assignment/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   └── endpoints.py          # API route definitions
+│   │   ├── db/
+│   │   │   ├── init_db.py            # Enables pgvector, creates schemas
+│   │   │   ├── models.py             # 7 SQLAlchemy models + performance indexes
+│   │   │   └── session.py            # Database connections (async/sync)
+│   │   ├── schemas/
+│   │   │   ├── agent.py              # Pydantic schemas for agent actions/drafts
+│   │   │   ├── contact.py            # Pydantic schemas for CRM profiles
+│   │   │   ├── email.py              # Pydantic schemas for email ingestion
+│   │   │   └── thread.py             # Pydantic schemas for thread timeline feeds
+│   │   ├── services/
+│   │   │   ├── agent_workflow.py     # 6-step ReAct state machine loop & tools
+│   │   │   ├── heuristics.py         # Sub-10ms synchronous keywords triage
+│   │   │   ├── llm.py                # Structured LLM triage & sentiment extractor
+│   │   │   ├── rag.py                # Document loader, chunk splitter, pgvector query
+│   │   │   └── scraper.py            # Reputation web scraper & robots.txt compliance
+│   │   ├── workers/
+│   │   │   └── tasks.py              # Celery background tasks & connection pools
+│   │   └── main.py                   # FastAPI initialization & error envelopes
+│   ├── requirements.txt              # Backend dependencies
+│   ├── seed_kb.py                    # Seeding script for RAG markdown files
+│   └── test_ingest_internal.py       # Ingest diagnostics check
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── AnalyticsDashboard.tsx # View 3: Recharts reports & heatmaps
+│   │   │   ├── InboxList.tsx          # View 1: Mission Control Inbox filters
+│   │   │   └── ThreadWorkspace.tsx    # View 2: Multi-pane chron Timeline & Trace
+│   │   ├── App.tsx                    # Main viewport layout coordinator
+│   │   ├── index.css                  # CSS glassmorphism and animations
+│   │   └── main.tsx                   # React root launcher
+│   ├── package.json                   # Frontend node dependencies
+│   ├── tailwind.config.js             # Layout configuration
+│   └── vite.config.ts                 # Dev server rules
+├── knowledge_base/                    # Markdown knowledge documents
+│   ├── pricing_policy.md
+│   ├── sla_policy.md
+│   ├── refund_policy.md
+│   ├── api_docs.md
+│   ├── compliance_faq.md
+│   └── escalation_matrix.md
+├── docker-compose.yml                 # Multi-container coordinator
+├── .gitignore                         # Local caches and logs exclusion
+├── memory.md                          # Persistent iteration log
+└── walkthrough.md                     # Code base walkthrough
+```
+
+---
+
+## 4. Module & File Breakdown
+
+### Backend Services (`backend/app/services/`)
+- **`heuristics.py`**: A synchronous helper executing under 10ms. Evaluates incoming email text for blacklisted spam keywords, matches internal employee addresses, and detects threat vectors.
+- **`ingestion.py`**: Coordinates transactional integrity. Determines if an email belongs to an existing thread, generates contact profiles dynamically if they do not exist, and queues a Celery background job.
+- **`rag.py`**: Handles RAG operations. Reads markdown documents in `knowledge_base/`, chunks text into 350-word passages with a 50-word overlap, computes OpenAI/mock vector embeddings, and performs cosine similarity queries.
+- **`llm.py`**: Connects to the OpenAI API (with a rules-based fallback engine) using Pydantic structured output models. Triages the category, urgency, sentiment score, requires_human escalation, and extracts key entities (names, order IDs, wallet hashes).
+- **`agent_workflow.py`**: Executes an autonomous ReAct loop of up to 6 steps. Registers tools like `tool_search_knowledge_base`, `tool_get_thread_history`, `tool_get_contact_profile`, and `tool_check_account_status`. It outputs a detailed trace of reasoning blocks (Thought $\rightarrow$ Action $\rightarrow$ Observation).
+- **`scraper.py`**: Implements a public sentiment scraper for Trustpilot, G2, and Capterra. Employs user-agent rotations and robots.txt parsing, storing values under a 6-hour cache.
+
+### Backend Routing (`backend/app/api/`)
+- **`endpoints.py`**: Houses REST endpoints coordinating stats, thread fetching, custom responses, draft patching/approvals, dry-runs, and database wipes.
+
+### Backend Workers (`backend/app/workers/`)
+- **`tasks.py`**: Configures Celery background tasks. Disposes of the database engine via `await engine.dispose()` inside a `finally` block to prevent asyncio event loop mismatches across task executions.
+
+### Database Layer (`backend/app/db/`)
+- **`models.py`**: Defines database tables (Email, Thread, Contact, Action, AuditLog, WebIntelligenceCache, KnowledgeChunk) with pgvector integration and datetime indexing.
+
+---
+
+## 5. API Endpoints Reference
+
+The backend exposes the following REST routes (all errors return a consistent schema format):
+
+| Method | Route | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/ingest` | Ingests email webhook payloads; schedules Celery background jobs. |
+| `GET` | `/api/status/{job_id}` | Polls Celery background job processing progress. |
+| `GET` | `/dashboard/stats` | Retrieves counts for pending, replied, escalated, critical, and spam. |
+| `GET` | `/threads` | Returns list of all active threads for the inbox pane. |
+| `GET` | `/threads/{email}` | Fetches timeline emails and action drafts for a specific sender. |
+| `POST` | `/respond/{email_id}` | Dispatches a manual human response email and marks thread Resolved. |
+| `PATCH` | `/drafts/{action_id}` | Modifies the proposed auto-reply content draft. |
+| `POST` | `/drafts/{action_id}/approve` | Approves and dispatches a proposed auto-reply email. |
+| `GET` | `/analytics/sentiment-trend` | Fetches historical average daily sentiment metrics. |
+| `GET` | `/analytics/category-breakdown` | Aggregates email counts grouped by system categories. |
+| `GET` | `/rag/search` | Queries the pgvector document database using cosine similarity. |
+| `GET` | `/intelligence/reputation` | Fetches scraped ratings and complaint lists for a company domain. |
+| `POST` | `/agent/dry-run/{email_id}` | Runs ReAct workflow simulation without database commits. |
+| `GET` | `/audit/{type}/{id}` | Returns historic audit trail records (updates, status shifts). |
+| `GET` | `/contacts` | Returns list of all contact profiles. |
+| `PATCH` | `/contacts/{email}/status` | Updates statuses (VIP, Blocked, Active) to alter pipeline behavior. |
+| `POST` | `/api/reset` | Flushes transactional data and rebuilds knowledge base vector spaces. |
+
+---
+
+## 6. How to Run the Environment
+
+### Complete Startup Command
+Execute the following in the root directory to compile, build, and deploy all services:
 ```bash
 docker-compose up --build
 ```
 
-### Access URLs
-- **Vite React Frontend**: [http://localhost:5173](http://localhost:5173)
-- **FastAPI Backend (Swagger API Docs)**: [http://localhost:8000/docs](http://localhost:8000/docs)
+### Port Mappings
+- **Vite React Frontend Portal**: [http://localhost:5173](http://localhost:5173)
+- **FastAPI Documentation (Swagger UI)**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 
-## Database Reset & Seeding
-The database and vector store will automatically initialize and build tables on startup.
-- If you need to wipe transactional tables and reseed vectors from scratch, click the **Reset Database State** button in the bottom right corner of the dashboard console.
+## 7. Sandbox Verification & Key Scenarios
 
----
-
-## Verification & Testing Scenarios
-
-Use the **Simulation Console** (right drawer) to inject test scenarios:
-- **Bob Jones SLA Escalation (msg_060)**: Triggers the 6-step agent loop (`get_thread_history` -> `search_knowledge_base` -> `check_account_status` -> `flag_for_legal` -> `draft_reply` -> `escalate_to_human`).
-- **GDPR Article 20 Request (msg_052)**: Flagged as compliance, creates an internal ticket, logs a legal flag, and restricts automated replies.
-- **Ransomware & Extortion Attack (msg_038)**: Heuristics blocklist detects the ransomware attempt instantly, flags the threat level, and disables auto-replies.
+Use the **Simulation Console** (right side panel) in the web portal to run tests:
+1. **Bob Jones P0 Outage Escalation (msg_060)**:
+   - Triggers the ReAct loop: `get_thread_history` $\rightarrow$ `search_knowledge_base` $\rightarrow$ `check_account_status` $\rightarrow$ `flag_for_legal` $\rightarrow$ `draft_reply` $\rightarrow$ `escalate_to_human`.
+   - Thread status changes to `Escalated`, and "October 1st" deadline is highlighted in purple.
+2. **Karen W Churn & Reputation Crisis (msg_033)**:
+   - Scrapes star ratings for `retail-co.com` (showing slow support themes) and retrieves retention offers from the RAG refund playbook.
+3. **GDPR Article 20 Request (msg_052)**:
+   - Categorized as compliance; locks auto-replies and sets a legal review flag.
+4. **Ransomware & Extortion Attack (msg_038)**:
+   - Heuristics blocklist detects threat keywords instantly, labels urgency as `Critical`, blocks auto-replies, and creates safety escalations.
