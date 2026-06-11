@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 25% 9%;      /* Deep charcoal-blue */
+    --foreground: 210 40% 98%;     /* Soft white */
+    
+    --card: 224 25% 12%;           /* Card background */
+    --card-foreground: 210 40% 98%;
+    
+    --popover: 224 25% 12%;
+    --popover-foreground: 210 40% 98%;
+    
+    --primary: 250 85% 65%;        /* Neon purple-blue */
+    --primary-foreground: 210 40% 98%;
+    
+    --secondary: 215 25% 20%;      /* Cool grey border/accent */
+    --secondary-foreground: 210 40% 98%;
+    
+    --muted: 217 10% 20%;
+    --muted-foreground: 215 20% 65%;
+    
+    --accent: 175 80% 45%;         /* Neon teal */
+    --accent-foreground: 220 25% 9%;
+    
+    --destructive: 0 84% 60%;      /* Bright red */
+    --destructive-foreground: 210 40% 98%;
+    
+    --border: 215 25% 18%;
+    
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: rgba(18, 24, 38, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  
+  .glass-card {
+    background: linear-gradient(135deg, rgba(20, 27, 45, 0.8) 0%, rgba(15, 20, 32, 0.8) 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  }
+  
+  .neon-glow-primary {
+    box-shadow: 0 0 15px rgba(124, 58, 237, 0.4);
+  }
+  
+  .neon-glow-accent {
+    box-shadow: 0 0 15px rgba(13, 148, 136, 0.4);
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+/* Page transitions */
+.fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.title-font {
+  font-family: 'Outfit', sans-serif;
+}

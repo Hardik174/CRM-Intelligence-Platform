@@ -1,0 +1,45 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# Databases & local storage
+*.db
+*.sqlite3
+*.log
+
+# Environments
+.env
+.env.local
+.venv
+env/
+venv/
+ENV/
+
+# Node / Frontend dependencies & builds
+node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/build/
+.eslintcache
+
+# IDEs & System files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Antigravity artifacts / local runs
+.gemini/
+.antigravity/
+*.png
+*.webp
+*.mp4
+*.img
