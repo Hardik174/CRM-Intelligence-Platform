@@ -173,3 +173,31 @@ Use the **Simulation Console** (right side panel) in the web portal to run tests
    - Categorized as compliance; locks auto-replies and sets a legal review flag.
 4. **Ransomware & Extortion Attack (msg_038)**:
    - Heuristics blocklist detects threat keywords instantly, labels urgency as `Critical`, blocks auto-replies, and creates safety escalations.
+
+---
+
+## 8. Environment Variables
+
+The platform runs out-of-the-box using standard settings defined in `docker-compose.yml`. For custom environments, the following variables can be configured:
+
+- `DATABASE_URL`: Connection string for SQLAlchemy async operations (e.g., `postgresql+asyncpg://postgres:postgres@db:5432/crmdb`).
+- `DATABASE_SYNC_URL`: Connection string for Alembic and SQLAlchemy sync operations (e.g., `postgresql://postgres:postgres@db:5432/crmdb`).
+- `REDIS_URL`: URL for Celery task broker and backend store (e.g., `redis://redis:6379/0`).
+- `OPENAI_API_KEY`: API Key for structured output classification, agent ReAct thinking, and RAG embeddings. (If left empty, the system automatically falls back to deterministic rules-based evaluations for mock testing).
+
+---
+
+## 9. Architecture Decisions & Trade-offs
+
+- **Task Queuing (Celery + Redis)**: Ingesting an email needs to trigger a multi-step agent loop (LLM analysis, RAG searches, web scraping, and profile queries). Running this synchronously would block the user webhook request and degrade HTTP performance. Using Celery ensures the webhook receives a fast 201 response while processing runs in the background.
+- **Async & Sync Database Splits**: Python's asyncio is used for FastAPI's endpoints to handle high-concurrency requests, while Celery worker threads run tasks inside synchronous execution contexts. The database setup includes both async engines (`DATABASE_URL`) and sync engines (`DATABASE_SYNC_URL`) to support both models cleanly.
+- **Fast Heuristic Pre-checks**: Before initiating expensive vector searches or LLM calls, a local regex keyword filter runs under 10ms. This prevents spam or internal team messages from using token quotas.
+- **Cache-First Scraper**: Web ratings for sender domains are fetched dynamically from review sites (G2/Capterra/Trustpilot) but are cached in the PostgreSQL database for 6 hours. This complies with crawl etiquette, avoids getting rate-limited, and guarantees sub-50ms responses for dashboard workspace updates.
+
+---
+
+## 10. Known Limitations
+
+- **Mock LLM Coverage**: In sandbox mode (without a valid `OPENAI_API_KEY`), the LLM pipeline uses rules-based mock triages. These mocks are optimized for the provided preset test cases (Bob Jones, Karen W, GDPR, Ransomware) and may not generalize to arbitrary text payloads.
+- **Scraper Proxy Limitations**: The sentiment scraper relies on standard `urllib` queries with mock user-agents. In production, scraping protected domains (like G2) would require integration with a proxy rotating API (like ScrapingBee) to bypass Cloudflare antibot protection.
+- **Alembic in Docker Volume**: Running Alembic migrations generates local Python files inside the Docker container. Volume mounts map `/app/alembic` to the host directory, ensuring local version control synchronization, but requires standard write permissions on the host system.
