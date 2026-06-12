@@ -30,6 +30,7 @@ class Thread(Base):
     last_updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     status = Column(String, default="Open")  # Open | Resolved | Escalated | Ignored
     assigned_to = Column(String, nullable=True)
+    summary = Column(Text, nullable=True)
 
     contact = relationship("Contact", back_populates="threads")
     emails = relationship("Email", back_populates="thread")

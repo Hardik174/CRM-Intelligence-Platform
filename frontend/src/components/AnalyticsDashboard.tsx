@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
-import { TrendingUp, AlertTriangle, Clock, Smile, Inbox } from "lucide-react";
+import { TrendingUp, AlertTriangle, Clock, Smile, Inbox, Download, Sparkles } from "lucide-react";
 
 interface AnalyticsDashboardProps {
   backendUrl: string;
@@ -11,6 +11,31 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ backendU
   const [categoryData, setCategoryData] = useState<any[]>([]);
   const [atRiskSenders, setAtRiskSenders] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+
+  const handleDownloadFineTuning = async () => {
+    try {
+      const res = await fetch(`${backendUrl}/analytics/fine-tuning-pairs`);
+      if (res.ok) {
+        const data = await res.json();
+        const pairs = data.pairs || [];
+        const jsonlContent = pairs.map((pair: any) => JSON.stringify(pair)).join("\n");
+        const blob = new Blob([jsonlContent], { type: "application/jsonl" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `crm_finetuning_${new Date().toISOString().split('T')[0]}.jsonl`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } else {
+        alert("Failed to fetch fine-tuning dataset.");
+      }
+    } catch (e) {
+      console.error("Error downloading fine-tuning data:", e);
+      alert("Error downloading fine-tuning data.");
+    }
+  };
 
   // Mock static values for agent performance counters & heatmap
   const performanceStats = {
@@ -96,6 +121,26 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ backendU
 
   return (
     <div className="flex-1 flex flex-col gap-6 overflow-y-auto p-2">
+      
+      {/* Dashboard Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4">
+        <div>
+          <h2 className="text-xl font-extrabold title-font text-white tracking-tight flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-primary animate-pulse" /> Business & Agentic Intelligence
+          </h2>
+          <p className="text-xs text-slate-400">
+            Monitor autonomous agent performance metrics, dynamic customer churn profiles, and system analytics.
+          </p>
+        </div>
+        <div>
+          <button
+            onClick={handleDownloadFineTuning}
+            className="flex items-center gap-2 bg-primary/20 hover:bg-primary/30 border border-primary/50 text-primary-foreground font-semibold px-4 py-2 rounded-xl text-xs transition-all active:scale-95 shadow-md shadow-primary/10"
+          >
+            <Download className="w-4 h-4" /> Download Fine-tuning Dataset (JSONL)
+          </button>
+        </div>
+      </div>
       
       {/* KPI Stats Counter Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

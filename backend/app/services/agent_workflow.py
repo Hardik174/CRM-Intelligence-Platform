@@ -3,7 +3,8 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import Email, Thread, Contact, Action, AuditLog
+from sqlalchemy import func
+from app.db.models import Contact, Thread, Email, Action, AuditLog
 from app.services.rag import search_rag
 from app.services.llm import analyze_email_with_llm
 from app.services.scraper import get_scraped_sentiment
@@ -181,7 +182,7 @@ async def run_agent_loop(
         # Step 1: Thread history
         history_obs = await tool_get_thread_history(db, email.sender)
         trace.append({
-            "thought": "First, I need to retrieve the full thread history to understand the background of Bob's outage escalation.",
+            "thought": "[Research Agent] First, I need to retrieve the full thread history to understand the background of Bob's outage escalation.",
             "action": "get_thread_history(sender_email='bob.jones@enterprise.net')",
             "observation": history_obs[:200] + "..."
         })
@@ -189,7 +190,7 @@ async def run_agent_loop(
         # Step 2: Search SLA policy
         sla_obs = await tool_search_knowledge_base(db, "SLA policy credit obligations root cause analysis")
         trace.append({
-            "thought": "Bob demands credit due to the SLA breach. I will search our SLA policy to find outage credit parameters and RCA timelines.",
+            "thought": "[Research Agent] Bob demands credit due to the SLA breach. I will search our SLA policy to find outage credit parameters and RCA timelines.",
             "action": "search_knowledge_base(query='SLA credit obligations RCA timeline')",
             "observation": sla_obs[:200] + "..."
         })
@@ -197,14 +198,14 @@ async def run_agent_loop(
         # Step 3: Check Bob's account status
         acc_obs = await tool_check_account_status(db, email.sender)
         trace.append({
-            "thought": "I need to check the customer profile and account status to confirm their subscription tier and any pending renewals.",
+            "thought": "[Research Agent] I need to check the customer profile and account status to confirm their subscription tier and any pending renewals.",
             "action": "check_account_status(email='bob.jones@enterprise.net')",
             "observation": acc_obs
         })
         
         # Step 4: Recognize legal threat and flag for legal
         trace.append({
-            "thought": "Bob mentions that their legal team is involved and their renewal is put on hold. This is a critical legal escalation.",
+            "thought": "[Classifier Agent] Bob mentions that their legal team is involved and their renewal is put on hold. This is a critical legal escalation.",
             "action": "flag_for_legal(email_id=email.id, issue_type='Legal escalation / SLA breach litigation threat')",
             "observation": "Email flagged for legal department. Ticket created in Legal Queue."
         })
@@ -218,14 +219,14 @@ async def run_agent_loop(
             "have been paged to resolve this with you directly.\n\nSincerely,\nOperations Support"
         )
         trace.append({
-            "thought": "I will draft an empathetic holding reply referencing our SLA credit policy to send to Bob, while routing this to human staff.",
+            "thought": "[Reply Agent] I will draft an empathetic holding reply referencing our SLA credit policy to send to Bob, while routing this to human staff.",
             "action": "draft_reply(context='SLA credit calculation, 24h RCA timeline', tone='empathetic, formal', policy_refs='SLA_Policy_Section_3')",
             "observation": f"Holding reply drafted: {draft_content[:150]}..."
         })
         
         # Step 6: Escalate to human cs director
         trace.append({
-            "thought": "Finally, I will escalate to human review with a pre-filled brief outlining the P0 downtime, credit dispute, and legal threat.",
+            "thought": "[Coordinator Agent] Finally, I will escalate to human review with a pre-filled brief outlining the P0 downtime, credit dispute, and legal threat.",
             "action": "escalate_to_human(email_id=email.id, reason='Legal escalation + SLA breach dispute', priority='Critical')",
             "observation": "Escalated. CSM notified."
         })
@@ -243,21 +244,21 @@ async def run_agent_loop(
         
         history_obs = await tool_get_thread_history(db, email.sender)
         trace.append({
-            "thought": "Customer has sent multiple unanswered emails. I must load thread history to verify delays.",
+            "thought": "[Research Agent] Customer has sent multiple unanswered emails. I must load thread history to verify delays.",
             "action": "get_thread_history(sender_email='karen.w@retail-co.com')",
             "observation": history_obs[:200] + "..."
         })
         
         web_obs = await get_scraped_sentiment(db, "retail-co.com")
         trace.append({
-            "thought": "The customer is threatening negative public reviews on G2/Trustpilot. I will fetch our public brand sentiment scores.",
+            "thought": "[Research Agent] The customer is threatening negative public reviews on G2/Trustpilot. I will fetch our public brand sentiment scores.",
             "action": "scrape_public_sentiment(company_name='retail-co.com')",
             "observation": f"Star Rating: {web_obs.get('rating', '3.5')}/5. Sentiment: Negative. Themes: slow support response."
         })
         
         refund_obs = await tool_search_knowledge_base(db, "refund policy churn retention playbook discount")
         trace.append({
-            "thought": "Let's check the Refund Policy and Churn Retention Playbook to see what retention discounts or credits we can offer.",
+            "thought": "[Research Agent] Let's check the Refund Policy and Churn Retention Playbook to see what retention discounts or credits we can offer.",
             "action": "search_knowledge_base(query='retention playbook discounts credits')",
             "observation": refund_obs[:200] + "..."
         })
@@ -270,7 +271,7 @@ async def run_agent_loop(
         )
         
         trace.append({
-            "thought": "I will draft a reply offering a 1-month service credit and 20% CS retention discount per policy, and escalate.",
+            "thought": "[Reply Agent] I will draft a reply offering a 1-month service credit and 20% CS retention discount per policy, and escalate.",
             "action": "escalate_to_human(email_id=email.id, reason='VIP Churn threat + public review threat', priority='High')",
             "observation": "Escalated to CS Director. Action registered."
         })
@@ -283,7 +284,7 @@ async def run_agent_loop(
         # GDPR Portability Request
         comp_obs = await tool_search_knowledge_base(db, "GDPR Article 20 right to portability compliance ticket")
         trace.append({
-            "thought": "This is a formal GDPR Article 20 data portability request. Let's query compliance docs.",
+            "thought": "[Research Agent] This is a formal GDPR Article 20 data portability request. Let's query compliance docs.",
             "action": "search_knowledge_base(query='GDPR right to portability')",
             "observation": comp_obs[:200] + "..."
         })
@@ -295,13 +296,13 @@ async def run_agent_loop(
         )
         
         trace.append({
-            "thought": "Per compliance guidelines, I will create an internal compliance ticket and draft a 30-day holding acknowledgement.",
+            "thought": "[Reply Agent] Per compliance guidelines, I will create an internal compliance ticket and draft a 30-day holding acknowledgement.",
             "action": "create_internal_ticket(title='GDPR Portability Export - marcus.del@fintech-startup.co', body='Export personal data within 30 days', assignee='compliance-officer')",
             "observation": "Compliance ticket created successfully. Assigned to Compliance Team."
         })
         
         trace.append({
-            "thought": "Now I will flag this for legal review and submit the auto-acknowledgement draft.",
+            "thought": "[Coordinator Agent] Now I will flag this for legal review and submit the auto-acknowledgement draft.",
             "action": "flag_for_legal(email_id=email.id, issue_type='GDPR Article 20 request')",
             "observation": "Flagged for Legal. Task logged."
         })
@@ -321,7 +322,7 @@ async def run_agent_loop(
                 kb_q = f"policy for {email.category or 'general questions'}"
                 obs = await tool_search_knowledge_base(db, kb_q)
                 trace.append({
-                    "thought": f"I will search the knowledge base for policies related to {email.category}.",
+                    "thought": f"[Research Agent] I will search the knowledge base for policies related to {email.category}.",
                     "action": f"search_knowledge_base(query='{kb_q}')",
                     "observation": obs[:150] + "..."
                 })
@@ -329,7 +330,7 @@ async def run_agent_loop(
                 # Step 2: Check account profile
                 obs = await tool_get_contact_profile(db, email.sender)
                 trace.append({
-                    "thought": "I should fetch the contact profile to check subscription status and value.",
+                    "thought": "[Research Agent] I should fetch the contact profile to check subscription status and value.",
                     "action": f"get_contact_profile(email='{email.sender}')",
                     "observation": obs
                 })
@@ -337,7 +338,7 @@ async def run_agent_loop(
                 # Step 3: Determine escalation or auto reply draft
                 if email.requires_human or email.urgency in ["Critical", "High"]:
                     trace.append({
-                        "thought": "The email requires human review due to classification or high urgency. Escalating.",
+                        "thought": "[Reply Agent] The email requires human review due to classification or high urgency. Escalating.",
                         "action": f"escalate_to_human(email_id={email.id}, reason='{email.category} triage required', priority='{email.urgency}')",
                         "observation": "Escalated to human support queue."
                     })
@@ -347,7 +348,7 @@ async def run_agent_loop(
                 else:
                     reply_text = f"Dear Customer,\n\nThank you for reaching out. Regarding your inquiry, {llm_classification.get('suggested_reply') or 'we are reviewing your request.'}\n\nBest regards,\nSupport Team"
                     trace.append({
-                        "thought": "This email does not require escalation. Drafting auto-reply using policy context.",
+                        "thought": "[Reply Agent] This email does not require escalation. Drafting auto-reply using policy context.",
                         "action": f"draft_reply(context='{email.category} support information', tone='professional', policy_refs='policy_docs.md')",
                         "observation": f"Reply drafted: {reply_text[:100]}..."
                     })
@@ -398,6 +399,22 @@ async def run_agent_loop(
         db.add(thread)
         await db.flush()
         
+        # Calculate dynamic churn risk score
+        if contact:
+            contact.churn_risk_score = await calculate_dynamic_churn_risk(db, contact)
+            db.add(contact)
+            await db.flush()
+            
+        # Email thread summarization (5+ emails)
+        stmt_count = select(func.count(Email.id)).where(Email.thread_id == email.thread_id)
+        res_count = await db.execute(stmt_count)
+        email_count = res_count.scalar() or 0
+        if email_count >= 5:
+            thread_summary = await generate_thread_summary(db, email.thread_id)
+            thread.summary = thread_summary
+            db.add(thread)
+            await db.flush()
+        
         # Audit log
         await create_audit_entry(
             db,
@@ -413,7 +430,9 @@ async def run_agent_loop(
             "status": email.status,
             "action_type": action_type,
             "suggested_reply": suggested_reply,
-            "reasoning_trace": trace
+            "reasoning_trace": trace,
+            "thread_id": email.thread_id,
+            "sender_email": email.sender
         }
     else:
         # Dry Run mode
@@ -469,3 +488,75 @@ async def create_audit_entry(
     db.add(entry)
     await db.flush()
     return entry
+
+async def calculate_dynamic_churn_risk(db: AsyncSession, contact: Contact) -> float:
+    # Fetch the last 5 emails from this contact
+    stmt = select(Email).where(Email.sender == contact.email).order_by(Email.timestamp.desc()).limit(5)
+    res = await db.execute(stmt)
+    emails = res.scalars().all()
+    
+    if not emails:
+        return contact.churn_risk_score or 0.1
+        
+    sentiment_avg = sum(e.sentiment_score for e in emails) / len(emails)
+    critical_emails = sum(1 for e in emails if e.urgency == "Critical")
+    escalated_emails = sum(1 for e in emails if e.status == "Escalated")
+    billing_issues = sum(1 for e in emails if e.category in ["Billing", "Compliance"])
+    
+    # Base churn risk score starts at baseline
+    base_risk = 0.2
+    if contact.status == "VIP":
+        base_risk = 0.1
+        
+    # Sentiment decay factor
+    sentiment_factor = 0.0
+    if sentiment_avg < 0.0:
+        sentiment_factor = abs(sentiment_avg) * 0.4
+        
+    # Critical urgency factor
+    critical_factor = min(critical_emails * 0.15, 0.3)
+    
+    # Escalated status factor
+    escalated_factor = 0.15 if escalated_emails > 0 else 0.0
+    
+    # Category issues factor (Billing/Compliance raises risk)
+    billing_factor = min(billing_issues * 0.1, 0.2)
+    
+    calculated_score = base_risk + sentiment_factor + critical_factor + escalated_factor + billing_factor
+    return max(0.0, min(1.0, calculated_score))
+
+async def generate_thread_summary(db: AsyncSession, thread_id: str) -> str:
+    stmt = select(Email).where(Email.thread_id == thread_id).order_by(Email.timestamp)
+    res = await db.execute(stmt)
+    emails = res.scalars().all()
+    
+    if len(emails) < 5:
+        return ""
+        
+    email_texts = []
+    for idx, e in enumerate(emails):
+        email_texts.append(f"Email {idx+1} from {e.sender} ({e.timestamp.isoformat()}):\nSubject: {e.subject}\nBody: {e.body[:300]}")
+        
+    full_text = "\n\n".join(email_texts)
+    
+    from app.config import settings
+    if settings.OPENAI_API_KEY:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an AI assistant summarizing a CRM email support thread. Generate a concise, exactly 3-sentence executive summary highlighting the client's issue, current escalation status, and proposed solution."},
+                    {"role": "user", "content": f"Please summarize this email thread:\n\n{full_text}"}
+                ],
+                max_tokens=150,
+                temperature=0.5
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"OpenAI summarization failed: {e}")
+            
+    first_sender = emails[0].sender
+    subject = emails[0].subject or "support request"
+    return f"This thread contains {len(emails)} emails starting with a request from {first_sender} regarding '{subject}'. The client has raised multiple follow-up queries, causing the ticket to escalate. Customer Success is coordinating dynamic resolution strategies."

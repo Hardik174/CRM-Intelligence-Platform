@@ -57,6 +57,7 @@ export const ThreadWorkspace: React.FC<ThreadWorkspaceProps> = ({
   const [contact, setContact] = useState<ContactProfile | null>(null);
   const [actions, setActions] = useState<ActionDetail[]>([]);
   const [reputation, setReputation] = useState<any>(null);
+  const [threadSummary, setThreadSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -84,8 +85,10 @@ export const ThreadWorkspace: React.FC<ThreadWorkspaceProps> = ({
       
       if (activeThread) {
         setEmails(activeThread.emails || []);
+        setThreadSummary(activeThread.summary || null);
       } else {
         setEmails([]);
+        setThreadSummary(null);
       }
 
       // 2. Fetch Contact profile
@@ -309,6 +312,19 @@ export const ThreadWorkspace: React.FC<ThreadWorkspaceProps> = ({
 
         {/* Message Chronological Timeline */}
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-background/20">
+          
+          {/* Executive Summary Banner */}
+          {threadSummary && (
+            <div className="bg-primary/10 border border-primary/30 p-3.5 rounded-lg flex flex-col gap-1.5 neon-glow-primary mb-2">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-primary flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 animate-pulse" /> Executive AI Summary (3-Sentences)
+              </span>
+              <p className="text-xs text-slate-300 italic leading-relaxed">
+                "{threadSummary}"
+              </p>
+            </div>
+          )}
+
           {sortedEmails.map((e, idx) => (
             <div key={e.id} className={`flex flex-col p-4 rounded-lg border transition-all ${
               e.sender === "support@mycompany.com" 
@@ -538,30 +554,48 @@ export const ThreadWorkspace: React.FC<ThreadWorkspaceProps> = ({
               {!actions || actions.length === 0 || !actions[0].agent_reasoning_log || !Array.isArray(actions[0].agent_reasoning_log) || actions[0].agent_reasoning_log.length === 0 ? (
                 <span className="text-muted-foreground">No agent reasoning steps recorded yet.</span>
               ) : (
-                actions[0].agent_reasoning_log.map((step, idx) => (
-                  <div key={idx} className="flex flex-col gap-1.5 border-l-2 border-primary/30 pl-3 relative">
-                    <div className="w-2 h-2 rounded-full bg-primary absolute -left-[5px] top-1.5"></div>
-                    <div className="text-white font-bold text-[10px] uppercase tracking-wide text-primary">
-                      Step {idx + 1}
+                actions[0].agent_reasoning_log.map((step, idx) => {
+                  const match = (step.thought || "").match(/^\[(.*?)\] (.*)$/s);
+                  const agentName = match ? match[1] : "Coordinator Agent";
+                  const thoughtText = match ? match[2] : (step.thought || "N/A");
+                  
+                  const getAgentBadgeColor = (name: string) => {
+                    if (name.includes("Classifier")) return "bg-blue-500/10 text-blue-300 border-blue-500/20";
+                    if (name.includes("Research")) return "bg-purple-500/10 text-purple-300 border-purple-500/20";
+                    if (name.includes("Reply")) return "bg-emerald-500/10 text-emerald-300 border-emerald-500/20";
+                    return "bg-amber-500/10 text-amber-300 border-amber-500/20";
+                  };
+
+                  return (
+                    <div key={idx} className="flex flex-col gap-1.5 border-l-2 border-primary/30 pl-3 relative">
+                      <div className="w-2 h-2 rounded-full bg-primary absolute -left-[5px] top-1.5"></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-bold text-[10px] uppercase tracking-wide text-primary">
+                          Step {idx + 1}
+                        </span>
+                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${getAgentBadgeColor(agentName)}`}>
+                          {agentName}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-amber-400 font-medium">Thought:</span>{" "}
+                        <span className="text-muted-foreground leading-relaxed">{thoughtText}</span>
+                      </div>
+                      <div>
+                        <span className="text-emerald-400 font-medium">Action:</span>{" "}
+                        <code className="text-emerald-300 font-mono text-[10px] bg-secondary/80 px-1 py-0.5 rounded">
+                          {step.action || "N/A"}
+                        </code>
+                      </div>
+                      <div>
+                        <span className="text-blue-400 font-medium">Observation:</span>{" "}
+                        <span className="text-muted-foreground text-[11px] leading-relaxed italic">
+                          {step.observation || "N/A"}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-amber-400 font-medium">Thought:</span>{" "}
-                      <span className="text-muted-foreground leading-relaxed">{step.thought || "N/A"}</span>
-                    </div>
-                    <div>
-                      <span className="text-emerald-400 font-medium">Action:</span>{" "}
-                      <code className="text-emerald-300 font-mono text-[10px] bg-secondary/80 px-1 py-0.5 rounded">
-                        {step.action || "N/A"}
-                      </code>
-                    </div>
-                    <div>
-                      <span className="text-blue-400 font-medium">Observation:</span>{" "}
-                      <span className="text-muted-foreground text-[11px] leading-relaxed italic">
-                        {step.observation || "N/A"}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}

@@ -33,6 +33,24 @@ async def async_process_email(email_id: int):
                 result = await run_agent_loop(db, email_id, dry_run=False)
                 await db.commit()
                 logger.info(f"Triage completed for Email ID {email_id}: {result}")
+                
+                # Trigger Redis Pub/Sub event for WebSockets
+                try:
+                    import json
+                    from redis.asyncio import Redis
+                    redis_client = Redis.from_url(settings.REDIS_URL)
+                    await redis_client.publish(
+                        "crm_events",
+                        json.dumps({
+                            "event": "ACTION_COMPLETED",
+                            "thread_id": result.get("thread_id") or "",
+                            "sender_email": result.get("sender_email") or ""
+                        })
+                    )
+                    await redis_client.close()
+                except Exception as pub_err:
+                    logger.error(f"Failed to publish crm_events on task completion: {pub_err}")
+                    
                 return result
             except Exception as e:
                 logger.error(f"Error in async email worker: {e}", exc_info=True)

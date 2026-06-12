@@ -74,6 +74,11 @@ async def on_startup():
             await seed_knowledge_base_if_empty(db)
         except Exception as e:
             logger.error(f"Failed to seed knowledge base: {e}")
+            
+    # Start Redis Pub/Sub listener for WebSockets
+    import asyncio
+    from app.api.endpoints import start_redis_listener
+    asyncio.create_task(start_redis_listener())
 
 @app.get("/")
 def read_root():

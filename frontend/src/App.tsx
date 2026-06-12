@@ -91,10 +91,37 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Poll intervals
+  // Poll and WebSocket live stream
   useEffect(() => {
     fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 4000);
-    return () => clearInterval(interval);
+    
+    // Connect WebSocket
+    const wsProto = BACKEND_URL.replace(/^http/, "ws");
+    const ws = new WebSocket(`${wsProto}/ws`);
+    
+    ws.onopen = () => {
+      console.log("WebSocket Connected: CRM Live Events Channel.");
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        console.log("WebSocket live event received:", msg);
+        fetchDashboardData();
+      } catch (e) {
+        console.error("Error parsing WebSocket message:", e);
+      }
+    };
+    
+    ws.onclose = () => {
+      console.log("WebSocket Connection Closed.");
+    };
+    
+    const interval = setInterval(fetchDashboardData, 4000); // Polling fallback
+    return () => {
+      ws.close();
+      clearInterval(interval);
+    };
   }, []);
 
   const fetchDashboardData = async () => {

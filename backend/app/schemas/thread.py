@@ -12,6 +12,7 @@ class ThreadResponse(BaseModel):
     last_updated_at: datetime
     status: str
     assigned_to: Optional[str] = None
+    summary: Optional[str] = None
     emails: List[EmailDetail] = []
 
     class Config:

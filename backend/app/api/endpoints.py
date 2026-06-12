@@ -158,6 +158,7 @@ async def get_contact_threads(contact_email: str, db: AsyncSession = Depends(get
                 last_updated_at=t.last_updated_at,
                 status=t.status,
                 assigned_to=t.assigned_to,
+                summary=t.summary,
                 emails=[EmailDetail.from_orm(e) for e in emails]
             ))
         return results
@@ -289,6 +290,25 @@ async def post_respond_email(
             db, "emails", orig_email.message_id, "SEND_RESPONSE", "user", {"reply_message_id": new_msg_id}
         )
         await db.commit()
+        
+        # Trigger WebSocket update
+        try:
+            from redis.asyncio import Redis
+            from app.config import settings
+            import json
+            redis_client = Redis.from_url(settings.REDIS_URL)
+            await redis_client.publish(
+                "crm_events",
+                json.dumps({
+                    "event": "THREAD_UPDATED",
+                    "thread_id": orig_email.thread_id,
+                    "sender_email": orig_email.sender
+                })
+            )
+            await redis_client.close()
+        except Exception as pub_err:
+            pass
+            
         return {"status": "success", "message_id": new_msg_id}
     except HTTPException:
         raise
@@ -327,6 +347,29 @@ async def patch_draft(
             {"old_content": old_content, "new_content": payload.proposed_content}
         )
         await db.commit()
+        
+        # Trigger WebSocket update
+        try:
+            from redis.asyncio import Redis
+            from app.config import settings
+            import json
+            redis_client = Redis.from_url(settings.REDIS_URL)
+            stmt_e = select(Email).where(Email.id == action.email_id)
+            res_e = await db.execute(stmt_e)
+            email_rec = res_e.scalar_one_or_none()
+            if email_rec:
+                await redis_client.publish(
+                    "crm_events",
+                    json.dumps({
+                        "event": "THREAD_UPDATED",
+                        "thread_id": email_rec.thread_id,
+                        "sender_email": email_rec.sender
+                    })
+                )
+            await redis_client.close()
+        except Exception:
+            pass
+            
         return {"status": "success", "draft_id": action.id}
     except Exception as e:
         await db.rollback()
@@ -399,6 +442,26 @@ async def approve_draft(
             {"executed_at": action.executed_at.isoformat()}
         )
         await db.commit()
+        
+        # Trigger WebSocket update
+        try:
+            from redis.asyncio import Redis
+            from app.config import settings
+            import json
+            redis_client = Redis.from_url(settings.REDIS_URL)
+            if email:
+                await redis_client.publish(
+                    "crm_events",
+                    json.dumps({
+                        "event": "THREAD_UPDATED",
+                        "thread_id": email.thread_id,
+                        "sender_email": email.sender
+                    })
+                )
+            await redis_client.close()
+        except Exception:
+            pass
+            
         return {"status": "success", "executed_at": action.executed_at}
     except Exception as e:
         await db.rollback()
@@ -655,5 +718,127 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
         raise HTTPException(
             status_code=500,
             detail={"error_code": "RESET_ERROR", "message": "Failed to reset database", "details": str(e)}
+        )
+
+# 16. WebSockets and PubSub broadcast helpers
+from fastapi import WebSocket, WebSocketDisconnect
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logger.info(f"WebSocket connected. Total active: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            logger.info(f"WebSocket disconnected. Total active: {len(self.active_connections)}")
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                logger.error(f"Error broadcasting to WebSocket connection: {e}")
+
+manager = ConnectionManager()
+
+async def start_redis_listener():
+    """Listens to the Redis crm_events channel and broadcasts to active WebSockets."""
+    import asyncio
+    import json
+    from redis.asyncio import Redis
+    from app.config import settings
+    
+    logger.info("Initializing Redis Pub/Sub WebSocket listener task...")
+    try:
+        redis_client = Redis.from_url(settings.REDIS_URL)
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe("crm_events")
+        logger.info("Successfully subscribed to Redis channel 'crm_events' for WebSockets.")
+        
+        while True:
+            # Check for messages
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message:
+                data = message["data"].decode("utf-8") if isinstance(message["data"], bytes) else message["data"]
+                logger.info(f"Redis PubSub crm_events received: {data}")
+                await manager.broadcast(data)
+            await asyncio.sleep(0.1)
+    except asyncio.CancelledError:
+        logger.info("Redis PubSub crm_events listener cancelled.")
+    except Exception as e:
+        logger.error(f"Error in Redis PubSub crm_events listener: {e}", exc_info=True)
+        # Restart after sleep
+        await asyncio.sleep(5)
+        asyncio.create_task(start_redis_listener())
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive by waiting for message
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        manager.disconnect(websocket)
+
+# 17. GET /analytics/fine-tuning-pairs
+@router.get("/analytics/fine-tuning-pairs")
+async def get_fine_tuning_pairs(db: AsyncSession = Depends(get_db)):
+    try:
+        # Fetch audit logs representing EDIT_DRAFT actions
+        stmt = select(AuditLog).where(AuditLog.action == "EDIT_DRAFT").order_by(AuditLog.timestamp)
+        res = await db.execute(stmt)
+        logs = res.scalars().all()
+        
+        pairs = []
+        for l in logs:
+            diff_data = l.diff or {}
+            old_c = diff_data.get("old_content") or ""
+            new_c = diff_data.get("new_content") or ""
+            
+            if not old_c or not new_c:
+                continue
+                
+            # Construct standard OpenAI message pair
+            pairs.append({
+                "messages": [
+                    {"role": "system", "content": "You are a customer success AI agent helper. Draft professional holding replies, retention offers, and legal answers based on company policies."},
+                    {"role": "user", "content": f"Please revise this draft to better fit customer needs. Original Draft:\n{old_c}"},
+                    {"role": "assistant", "content": new_c}
+                ]
+            })
+            
+        if not pairs:
+            # Provide some default training pairs for demonstration
+            pairs = [
+                {
+                    "messages": [
+                        {"role": "system", "content": "You are a customer success AI agent helper. Draft professional holding replies, retention offers, and legal answers based on company policies."},
+                        {"role": "user", "content": "Please revise this draft to better fit customer needs. Original Draft:\nDear Bob,\n\nWe commit to a 99.9% Uptime SLA. Since the renewal is on hold, our Customer Success Director has been paged."},
+                        {"role": "assistant", "content": "Dear Bob,\n\nWe acknowledge your message regarding the SLA breach from our October 1st outage and note the involvement of your legal team. Per our SLA Policy, we commit to a 99.9% Uptime SLA, and we are calculating the appropriate Service Credit. We also confirm that a full Root Cause Analysis (RCA) is being prepared. Since the renewal is on hold, our Customer Success Director and Legal Operations have been paged to resolve this with you directly.\n\nSincerely,\nOperations Support"}
+                    ]
+                },
+                {
+                    "messages": [
+                        {"role": "system", "content": "You are a customer success AI agent helper. Draft professional holding replies, retention offers, and legal answers based on company policies."},
+                        {"role": "user", "content": "Please revise this draft to better fit customer needs. Original Draft:\nDear Karen,\n\nWe apologize for the delay. We will give you a refund."},
+                        {"role": "assistant", "content": "Dear Karen,\n\nWe apologize sincerely for the delay in responding to your refund requests. To make things right and assist with your platform experience, we would like to offer you a free month of service credit as well as a 20% discount on your next 3 billing cycles. Our Customer Success team has been paged to help audit your slow dashboard loading speeds.\n\nSincerely,\nCustomer Success"}
+                    ]
+                }
+            ]
+            
+        return {"pairs": pairs}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error_code": "FINE_TUNING_ERROR", "message": "Failed to retrieve training pairs", "details": str(e)}
         )
 

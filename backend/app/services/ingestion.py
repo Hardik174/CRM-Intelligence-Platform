@@ -169,5 +169,22 @@ async def ingest_email(db: AsyncSession, payload: EmailIngest) -> Tuple[Email, b
     db.add(audit)
     await db.flush()
     
+    # Trigger Redis Pub/Sub event for WebSockets
+    try:
+        from redis.asyncio import Redis
+        from app.config import settings
+        redis_client = Redis.from_url(settings.REDIS_URL)
+        await redis_client.publish(
+            "crm_events",
+            json.dumps({
+                "event": "EMAIL_INGESTED",
+                "thread_id": new_email.thread_id,
+                "sender_email": new_email.sender
+            })
+        )
+        await redis_client.close()
+    except Exception as pub_err:
+        logger.error(f"Failed to publish crm_events on ingest: {pub_err}")
+        
     return new_email, True
 
